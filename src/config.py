@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-DEFAULT_LOOKBACK_DAYS = 2
+DEFAULT_LOOKBACK_DAYS = 3
 MAX_LOOKBACK_DAYS = 60
 DEFAULT_CONTAINER = "bronze"
 
