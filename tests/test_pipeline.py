@@ -29,3 +29,9 @@ def test_resolve_window_rejects_reversed_range() -> None:
 def test_resolve_window_rejects_huge_range() -> None:
     with pytest.raises(ValueError):
         resolve_window(2, start_date="2025-01-01", today=date(2026, 11, 21))
+
+
+def test_default_lookback_is_three_days() -> None:
+    from src.config import DEFAULT_LOOKBACK_DAYS
+
+    assert DEFAULT_LOOKBACK_DAYS == 3
