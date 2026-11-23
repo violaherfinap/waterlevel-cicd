@@ -1,0 +1,5 @@
+# Samakan dengan repo referensi: jangan pakai alias datetime.UTC (py3.11+).
+target-version = "py312"
+
+[lint]
+ignore = ["UP017"]
