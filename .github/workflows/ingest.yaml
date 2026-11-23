@@ -1,0 +1,85 @@
+name: ingest
+
+on:
+  schedule:
+    # Setiap 6 jam (00:17, 06:17, 12:17, 18:17 UTC).
+    # Menit 17 dipilih agar tidak bertabrakan dengan beban puncak GitHub.
+    - cron: "17 */6 * * *"
+
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Jumlah hari ke belakang (0-60)"
+        required: false
+        default: "2"
+      stations:
+        description: "Site number dipisah koma; kosongkan untuk semua stasiun"
+        required: false
+        default: ""
+
+  # Bukti CD: setiap merge ke main yang mengubah kode ikut mengirim data.
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "requirements.txt"
+      - ".github/workflows/ingest.yaml"
+
+permissions:
+  id-token: write # wajib untuk OIDC ke Microsoft Entra ID
+  contents: read
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: ingest-to-azure-blob
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Login ke Azure (OIDC, tanpa secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Jalankan ingestion
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+          AZURE_CONTAINER_BRONZE: ${{ vars.AZURE_CONTAINER_BRONZE || 'bronze' }}
+          USGS_API_KEY: ${{ secrets.USGS_API_KEY }}
+          LOOKBACK_DAYS: ${{ inputs.lookback_days || '2' }}
+          STATIONS: ${{ inputs.stations }}
+        run: |
+          python -m src.pipeline \
+            --lookback-days "$LOOKBACK_DAYS" \
+            --stations "$STATIONS"
+
+      - name: Verifikasi blob di Azure
+        run: |
+          COUNT=$(az storage blob list \
+            --account-name "${{ vars.AZURE_STORAGE_ACCOUNT }}" \
+            --container-name "${{ vars.AZURE_CONTAINER_BRONZE || 'bronze' }}" \
+            --prefix "usgs/" \
+            --auth-mode login \
+            --query "length(@)" -o tsv)
+          echo "Jumlah blob USGS: **$COUNT**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ringkasan
+        if: always()
+        run: |
+          echo "Status job: **${{ job.status }}**" >> "$GITHUB_STEP_SUMMARY"
